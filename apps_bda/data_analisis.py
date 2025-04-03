@@ -24,7 +24,7 @@ df_sales = spark.read \
     .option("inferSchema","false") \
     .option("delimiter",",") \
     .option("pathGlobFilter","*.csv") \
-    .load("s3a://sample-bucket/output_processed/")   
+    .load("s3a://sample-bucket/sales_processed/")   
 
 df_stores = spark.read \
     .format("csv") \
@@ -62,7 +62,7 @@ df_sales_stores.groupBy("store_id", "store_name") \
 
 # ¿Cuáles son los ingresos totales generados en una fecha concreta?
 
-df_sales_stores.filter(df_sales_stores["date"] == "2023-06-17") \
+df_sales_stores.filter(df_sales_stores["date"] == "2023-04-15") \
     .groupBy("date") \
     .agg(sum("revenue").alias("total_revenue")) \
     .orderBy(asc("total_revenue")) \

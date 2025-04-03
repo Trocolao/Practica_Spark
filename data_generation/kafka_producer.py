@@ -38,7 +38,7 @@ while True:
     message = {
         "timestamp": introduce_errors(random_timestamp(start_date, end_date)),  # Timestamp aleatorio
         "store_id": introduce_errors(random.randint(1, 100)),  # ID de tienda aleatorio
-        "product_id": introduce_errors(fake.uuid4()[:8]),  # ID de producto aleatorio
+        "product_id": introduce_errors(fake.uuid4()[:4]),  # ID de producto aleatorio
         "quantity_sold": introduce_errors(random.randint(1, 20)),  # Cantidad vendida aleatoria
         "revenue": introduce_errors(round(random.uniform(100.0, 1000.0), 2))  # Ingreso aleatorio
     }

@@ -42,4 +42,4 @@ with open(ruta_csv, mode="w", newline="", encoding="utf-8") as file:
 cursor.close()
 conn.close()
 
-print(f"✅ Exportación completada sin comillas ni problemas con comas: {ruta_csv}")
+print(f"Exportación completada sin comillas ni problemas con comas: {ruta_csv}")

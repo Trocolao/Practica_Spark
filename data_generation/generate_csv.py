@@ -26,7 +26,7 @@ def introduce_errors(value, error_rate=0.1):
 data = {
     "date": [introduce_errors(fake.date_between(start_date='-2y', end_date='today').strftime('%Y-%m-%d')) for _ in range(num_records)],
     "store_id": [introduce_errors(str(random.randint(1, 100)) if random.random() > 0.05 else "XX") for _ in range(num_records)],
-    "product_id": [introduce_errors(fake.uuid4()[:8] if random.random() > 0.05 else "INVALID") for _ in range(num_records)],
+    "product_id": [introduce_errors(fake.uuid4()[:4] if random.random() > 0.05 else "INVALID") for _ in range(num_records)],
     "quantity_sold": [introduce_errors(str(random.randint(1, 50)) if random.random() > 0.05 else "NaN") for _ in range(num_records)],
     "revenue": [introduce_errors(str(round(random.uniform(5, 500), 2)) if random.random() > 0.05 else "0.0.0") for _ in range(num_records)]
 }

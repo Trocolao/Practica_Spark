@@ -186,15 +186,12 @@ df_kafka.show(5)
 df_postgres.printSchema()
 df_postgres.show(5)
 
-# Finalizar la sesión de Spark
-df_csv \
-    .write \
-    .option('fs.s3a.committer.name', 'partitioned') \
-    .option('fs.s3a.committer.staging.conflict-mode', 'replace') \
-    .option("fs.s3a.fast.upload.buffer", "bytebuffer")\
-    .mode('overwrite') \
-    .csv(path='s3a://sample-bucket/output_processed', sep=',')
-df_kafka \
+df_combined = df_csv.union(df_kafka)
+df_combined = df_combined.dropDuplicates(["store_id", "product_id", "date"])
+df_combined.printSchema()
+df_combined.show(5)
+
+df_combined \
     .write \
     .option('fs.s3a.committer.name', 'partitioned') \
     .option('fs.s3a.committer.staging.conflict-mode', 'replace') \
