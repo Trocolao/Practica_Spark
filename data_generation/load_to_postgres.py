@@ -25,11 +25,9 @@ def create_table():
             port=5432
         )
         createTableString = 'CREATE TABLE IF NOT EXISTS Stores ( store_id SERIAL PRIMARY KEY, store_name VARCHAR(255), location VARCHAR(255), demographics VARCHAR(255));'
-        createTableString2 = 'CREATE TABLE IF NOT EXISTS Tiendas ( store_id SERIAL PRIMARY KEY, store_name VARCHAR(255), location VARCHAR(255), demographics VARCHAR(255), Tratado VARCHAR(255), Fecha_Insercion TIMESTAMP);'
 
         with conn.cursor() as cur:
             cur.execute(createTableString)
-            cur.execute(createTableString2)
 
         conn.commit()
 
