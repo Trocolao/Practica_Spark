@@ -9,8 +9,8 @@ s3 = boto3.client(
 )
 
 # Define the bucket name and object key
-bucket_name = 'new-sample-bucket'
-object_key = 'eventsData/part-00001-23048d28-3fd1-4eb6-869c-821c927eb1dc-c000.json'
+bucket_name = 'sample-bucket'
+object_key = 'sales_data/part-00000-309aae73-1fee-4127-a603-a6f68d20ced4-c000.csv'
 
 # Download the file from S3 bucket
 response = s3.get_object(Bucket=bucket_name, Key=object_key)

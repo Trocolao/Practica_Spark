@@ -20,7 +20,7 @@ spark = SparkSession.builder \
 #Upload file to S3
 try:
     #Read file from local directory
-    df3 = spark.read.option("delimiter", ",").option("header", "true").csv("/opt/spark-data/csv/sales_data.csv")
+    df3 = spark.read.option("delimiter", ",").option("header", "true").csv("/opt/spark-data/csv/stores_data.csv")
     
     df3 \
     .write \
@@ -28,11 +28,16 @@ try:
     .option('fs.s3a.committer.staging.conflict-mode', 'replace') \
     .option("fs.s3a.fast.upload.buffer", "bytebuffer")\
     .mode('overwrite') \
-    .csv(path='s3a://sample-bucket/output', sep=',')
+    .csv(path='s3a://sample-bucket/stores', sep=',')
     spark.stop()
-
     
     
 except Exception as e:
     print("error reading TXT")
     print(e)
+
+
+
+
+
+

@@ -1,5 +1,6 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, current_timestamp, when
+from pyspark.sql.functions import col, current_timestamp, when, to_date,mean, from_unixtime,lit
+from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StringType, IntegerType, DoubleType
 from pyspark.ml.feature import Imputer
 import pandas as pd
@@ -17,71 +18,195 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 # Leer datos desde el bucket S3
-df = spark.read \
-    .format("parquet") \
-    .load("s3a://sample-bucket/sales/")
+df_csv = spark.read \
+    .format("csv") \
+    .option("header", "false") \
+    .option("inferSchema","false") \
+    .option("delimiter",",") \
+    .option("pathGlobFilter","*.csv") \
+    .load("s3a://sample-bucket/output/")   
 
-df_ = spark.read \
-    .format("parquet") \
-    .load("s3a://sample-bucket/sales/")
-
+df_kafka = spark.read \
+    .format("csv") \
+    .option("header", "false") \
+    .option("inferSchema","false") \
+    .option("delimiter",",") \
+    .option("pathGlobFilter","*.csv") \
+    .load("s3a://sample-bucket/sales_data/")
+   
+df_postgres = spark.read \
+    .format("csv") \
+    .option("header", "false") \
+    .option("inferSchema","false") \
+    .option("delimiter",",") \
+    .option("pathGlobFilter","*.csv") \
+    .load("s3a://sample-bucket/stores/")   
+  
 # Esquema del dataframe
-df.printSchema()
+# Leer el archivo CSV sin usar la primera fila como encabezado
+# Definir manualmente los nombres de las columnas
+column_names = ["date", "store_id", "product_id", "quantity_sold", "revenue"]
+column_names2 = ["store_id", "store_name", "location", "demographics"]
+numeric_columns = ["quantity_sold", "revenue"]
 
-# 1. **Tratamiento de valores perdidos (Nulos)**
+df_csv = df_csv.toDF(*column_names)
+df_kafka = df_kafka.toDF(*column_names)
+df_postgres = df_postgres.toDF(*column_names2)
 
-# Imputación para las columnas numéricas (rellenar con la media)
-imputer = Imputer(inputCols=["quantity_sold", "revenue"], outputCols=["quantity_sold_imputed", "revenue_imputed"])
-df = imputer.fit(df).transform(df)
+#Conversión de los datos a los valores que nos piden
 
-# Opcional: Eliminar filas con valores perdidos en columnas críticas (si fuera necesario)
-df = df.dropna(subset=["store_id", "product_id"])
+df_csv = df_csv.select(
+    to_date(col("date"), "yyyy-MM-dd").alias("date"),    
+    col("store_id").cast("int").alias("store_id"),   
+    col("product_id").cast("string").alias("product_id"),    
+    col("quantity_sold").cast("int").alias("quantity_sold"),    
+    col("revenue").cast("double").alias("revenue")
+)
 
-# 2. **Eliminar duplicados**: Eliminar registros duplicados basados en el subconjunto de columnas
-df = df.dropDuplicates(["store_id", "product_id", "timestamp"])
+df_kafka = df_kafka.select(
+    (col("date").cast("double")).alias("date"),  # Aplica from_unixtime correctamente
+    col("store_id").cast("int").alias("store_id"),   
+    col("product_id").cast("string").alias("product_id"),    
+    col("quantity_sold").cast("int").alias("quantity_sold"),    
+    col("revenue").cast("double").alias("revenue")
+)
 
-# 3. **Conversión de tipos de datos**:
+df_kafka = df_kafka.withColumn("date", to_date(from_unixtime(col("date").cast("double"))))
 
-# Convertir timestamp de String a Date/Time
-df = df.withColumn("timestamp", col("timestamp").cast("timestamp"))
+df_postgres = df_postgres.select(
+    col("store_id").cast("int").alias("store_id"),   
+    col("store_name").cast("string").alias("store_name"),    
+    col("location").cast("string").alias("location"),    
+    col("demographics").cast("string").alias("demographics")
+)
 
-# Convertir revenue de String a Double (si es necesario)
-df = df.withColumn("revenue", col("revenue").cast("double"))
+#Añadimos estas columnas ya que al cambiar el tipo de dato a todos todos los datos han sido tratados
+def anadir_columnas(df):  
+    # Añadir la columna 'Fecha Inserción' con la fecha actual en formato UTC
+    df = df.withColumn("Tratados", lit("Sí"))
+    df = df.withColumn("Fecha Inserción", current_timestamp())
+    return df
 
-# 4. **Añadir columnas de metadata**:
-# Añadir columna "Tratados" (marca si fue tratado en la transformación)
-df = df.withColumn("Tratados", when(col("quantity_sold").isNotNull(), "Sí").otherwise("No"))
+df_csv=anadir_columnas(df_csv)
+df_kafka=anadir_columnas(df_kafka)
+df_postgres=anadir_columnas(df_postgres)
 
-# Añadir columna de "Fecha Inserción" (fecha UTC de la inserción)
-df = df.withColumn("Fecha Inserción", current_timestamp())
+df_csv = df_csv.filter(
+    (col("store_id").isNotNull()) &  # Elimina filas con store_id nulo
+    (col("date").isNotNull()) &  # Elimina filas con store_id nulo
+    (col("product_id").isNotNull())&
+    (col("product_id")!="ERROR")&
+    (col("product_id")!="INVALID")
+)
 
-# 5. **Detección y tratamiento de valores atípicos**:
+df_kafka = df_kafka.filter(
+    (col("store_id").isNotNull()) &
+    (col("date").isNotNull()) &  # Elimina filas con store_id nulo
+    (col("product_id").isNotNull())&
+    (col("product_id")!="ERROR")&
+    (col("product_id")!="INVALID")
+)
 
-# Para detectar valores atípicos, vamos a usar una técnica sencilla: el rango intercuartílico (IQR)
-def detect_outliers(df, column):
-    # Calcular los cuartiles
-    quantiles = df.approxQuantile(column, [0.25, 0.75], 0.05)
-    q1 = quantiles[0]
-    q3 = quantiles[1]
-    iqr = q3 - q1
-    lower_bound = q1 - 1.5 * iqr
-    upper_bound = q3 + 1.5 * iqr
-    return df.filter((col(column) >= lower_bound) & (col(column) <= upper_bound))
+df_postgres = df_postgres.filter(
+    (col("store_id").isNotNull())
+)
 
-# Detectar valores atípicos en "revenue"
-df = detect_outliers(df, "revenue")
+#Ahora vamos a rellenar los valores numéricos con la media
+mean_quantity = df_csv.select(mean(col("quantity_sold"))).collect()[0][0]
+mean_revenue = df_csv.select(mean(col("revenue"))).collect()[0][0]
 
-# Detectar valores atípicos en "quantity_sold"
-df = detect_outliers(df, "quantity_sold")
+df_csv = df_csv.fillna({"quantity_sold": mean_quantity, "revenue": mean_revenue})
 
-# 6. **Escribir los datos transformados en el Data Lake (S3)**:
-# Guardar los datos transformados en el bucket de S3 (en formato Parquet)
-df.write \
-    .mode("overwrite") \
-    .parquet("s3a://sample-bucket/transformed_sales/")
+#En el otro csv también
+mean_quantity_2 = df_kafka.select(mean(col("quantity_sold"))).collect()[0][0]
+mean_revenue_2 = df_kafka.select(mean(col("revenue"))).collect()[0][0]
 
-# Mostrar los primeros registros para verificar
-df.show(10)
+df_kafka = df_kafka.fillna({"quantity_sold": mean_quantity_2, "revenue": mean_revenue_2})
+
+#Eliminar duplicados
+
+def get_mode(df, column_name):
+    filtered_df = df.filter(
+        (df[column_name] != "ERROR") & 
+        (df[column_name].isNotNull()) & 
+        (df[column_name] != "None")
+    )
+    
+    # Obtener los valores más frecuentes de la columna filtrada
+    mode_df = filtered_df.groupBy(column_name).count().orderBy('count', ascending=False).limit(1)
+    mode = mode_df.collect()[0][0]  # Obtener el valor más frecuente
+    return mode
+
+# Obtener la moda de la columna 'product_id'
+mode_value_location = get_mode(df_postgres, 'location')
+mode_value_demographics = get_mode(df_postgres, 'demographics')
+mode_value_store = get_mode(df_postgres, 'store_name')
+# Reemplazar los valores nulos, vacíos o 'ERROR' con la moda de la columna
+df_postgres = df_postgres.withColumn(
+    "location", 
+    when((col("location").isNull()) | (col("location") == "")| (col("location") == "None") | (col("location") == "ERROR"), mode_value_location).otherwise(col("location"))
+)
+df_postgres = df_postgres.withColumn(
+    "demographics", 
+    when((col("demographics").isNull()) | (col("demographics") == "") |(col("demographics") == "None") | (col("demographics") == "ERROR"), mode_value_demographics).otherwise(col("demographics"))
+)
+df_postgres = df_postgres.withColumn(
+    "store_name", 
+    when((col("store_name").isNull()) | (col("store_name") == "") |(col("location") == "None") | (col("store_name") == "ERROR"), mode_value_store).otherwise(col("store_name"))
+)
+def tratar_valores_atipicos(df, columnas):
+
+    for columna in columnas:
+        quantiles = df.approxQuantile(columna, [0.25, 0.75], 0.05)
+        Q1, Q3 = quantiles[0], quantiles[1]
+
+        IQR = Q3 - Q1
+
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+
+        mean_value = df.select(mean(col(columna))).collect()[0][0]
+
+        df = df.withColumn(
+            columna,
+            when((col(columna) < lower_bound) | (col(columna) > upper_bound), mean_value)
+            .otherwise(col(columna))
+        )
+    return df
+
+df_csv=tratar_valores_atipicos(df_csv,numeric_columns)
+df_kafka=tratar_valores_atipicos(df_kafka,numeric_columns)
+
+df_csv.printSchema()
+df_csv.show(5)
+
+df_kafka.printSchema()
+df_kafka.show(5)
+
+df_postgres.printSchema()
+df_postgres.show(5)
 
 # Finalizar la sesión de Spark
+df_csv \
+    .write \
+    .option('fs.s3a.committer.name', 'partitioned') \
+    .option('fs.s3a.committer.staging.conflict-mode', 'replace') \
+    .option("fs.s3a.fast.upload.buffer", "bytebuffer")\
+    .mode('overwrite') \
+    .csv(path='s3a://sample-bucket/output_processed', sep=',')
+df_kafka \
+    .write \
+    .option('fs.s3a.committer.name', 'partitioned') \
+    .option('fs.s3a.committer.staging.conflict-mode', 'replace') \
+    .option("fs.s3a.fast.upload.buffer", "bytebuffer")\
+    .mode('overwrite') \
+    .csv(path='s3a://sample-bucket/sales_processed', sep=',')
+df_postgres \
+    .write \
+    .option('fs.s3a.committer.name', 'partitioned') \
+    .option('fs.s3a.committer.staging.conflict-mode', 'replace') \
+    .option("fs.s3a.fast.upload.buffer", "bytebuffer")\
+    .mode('overwrite') \
+    .csv(path='s3a://sample-bucket/stores_processed', sep=',')
+
 spark.stop()
