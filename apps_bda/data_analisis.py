@@ -7,17 +7,31 @@ import pandas as pd
 import numpy as np
 
 # Crear la sesión de Spark
+
 spark = SparkSession.builder \
-    .appName("Data Analysis") \
-    .config("spark.sql.shuffle.partitions", 4) \
+    .appName("ANALISIS VENTAS") \
+    .config("spark.driver.extraClassPath", "/opt/spark-apps/postgresql-42.7.3.jar:/opt/spark/jars/*") \
+    .config("spark.executor.extraClassPath", "/opt/spark-apps/postgresql-42.7.3.jar:/opt/spark/jars/*") \
     .config("spark.hadoop.fs.s3a.endpoint", "http://localstack:4566") \
     .config("spark.hadoop.fs.s3a.access.key", "test") \
     .config("spark.hadoop.fs.s3a.secret.key", "test") \
     .config("spark.hadoop.fs.s3a.path.style.access", "true") \
-    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
+    .master("spark://spark-master:7077") \
     .getOrCreate()
 
+jdbc_url = "jdbc:postgresql://postgres-db:5432/retail_db"
+connection_properties = {
+    "user": "postgres",
+    "password": "casa1234",
+    "driver": "org.postgresql.Driver"
+}
 
+df_sales = spark.read.jdbc(url=jdbc_url, table="sales_info", properties=connection_properties)
+df_stores = spark.read.jdbc(url=jdbc_url, table="stores_info", properties=connection_properties)
+df_sales_stores = df_sales.join(df_stores, on="store_id", how="left")
+
+'''
 df_sales = spark.read \
     .format("csv") \
     .option("header", "true") \
@@ -41,7 +55,6 @@ column_names2 = ["store_id", "store_name", "location", "demographics","Tratado",
 df_sales = df_sales.toDF(*column_names)
 df_stores = df_stores.toDF(*column_names2)
 df_stores = df_stores.drop("Tratado", "Fecha Inserción")
-df_sales_stores = df_sales.join(df_stores, on="store_id", how="left")
 
 df_sales_stores = df_sales_stores.select(
     to_date(col("date"), "yyyy-MM-dd").alias("date"),    
@@ -53,7 +66,7 @@ df_sales_stores = df_sales_stores.select(
     col("location").cast("string").alias("location"),
     col("demographics").cast("string").alias("demographics")
 )
-
+'''
 #¿Qué tienda tiene los mayores ingresos totales?
 df_sales_stores.groupBy("store_id", "store_name") \
     .agg(sum("revenue").alias("total_revenue")) \

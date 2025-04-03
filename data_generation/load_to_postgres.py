@@ -25,15 +25,19 @@ def create_table():
             port=5432
         )
         createTableString = 'CREATE TABLE IF NOT EXISTS Stores ( store_id SERIAL PRIMARY KEY, store_name VARCHAR(255), location VARCHAR(255), demographics VARCHAR(255));'
+        createTableString2 = 'CREATE TABLE IF NOT EXISTS Tiendas ( store_id SERIAL PRIMARY KEY, store_name VARCHAR(255), location VARCHAR(255), demographics VARCHAR(255), Tratado VARCHAR(255), Fecha_Insercion TIMESTAMP);'
+
         with conn.cursor() as cur:
             cur.execute(createTableString)
+            cur.execute(createTableString2)
+
         conn.commit()
 
         with conn.cursor() as cur:
             for x in range(1000):
                 store_name = introduce_errors(fake.company())
                 location = introduce_errors(fake.city())
-                demographics = introduce_errors(fake.word())
+                demographics = introduce_errors(fake.region())
                 
                 insertString = 'INSERT INTO Stores (store_name, location, demographics) VALUES (%s, %s, %s)'
                 cur.execute(insertString, (store_name, location, demographics))

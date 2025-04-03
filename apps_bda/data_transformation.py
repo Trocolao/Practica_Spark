@@ -8,15 +8,16 @@ import numpy as np
 
 # Crear la sesión de Spark
 spark = SparkSession.builder \
-    .appName("Data Transformation") \
-    .config("spark.sql.shuffle.partitions", 4) \
+    .appName("PROCESAMIENTO DE CSV") \
+    .config("spark.driver.extraClassPath", "/opt/spark-apps/postgresql-42.7.3.jar:/opt/spark/jars/*") \
+    .config("spark.executor.extraClassPath", "/opt/spark-apps/postgresql-42.7.3.jar:/opt/spark/jars/*") \
     .config("spark.hadoop.fs.s3a.endpoint", "http://localstack:4566") \
     .config("spark.hadoop.fs.s3a.access.key", "test") \
     .config("spark.hadoop.fs.s3a.secret.key", "test") \
     .config("spark.hadoop.fs.s3a.path.style.access", "true") \
-    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
+    .master("spark://spark-master:7077") \
     .getOrCreate()
-
 # Leer datos desde el bucket S3
 df_csv = spark.read \
     .format("csv") \
@@ -177,33 +178,26 @@ def tratar_valores_atipicos(df, columnas):
 df_csv=tratar_valores_atipicos(df_csv,numeric_columns)
 df_kafka=tratar_valores_atipicos(df_kafka,numeric_columns)
 
-df_csv.printSchema()
-df_csv.show(5)
-
-df_kafka.printSchema()
-df_kafka.show(5)
-
-df_postgres.printSchema()
-df_postgres.show(5)
-
 df_combined = df_csv.union(df_kafka)
 df_combined = df_combined.dropDuplicates(["store_id", "product_id", "date"])
-df_combined.printSchema()
-df_combined.show(5)
+df_postgres = df_postgres.drop("Tratados", "Fecha Inserción")
 
-df_combined \
-    .write \
-    .option('fs.s3a.committer.name', 'partitioned') \
-    .option('fs.s3a.committer.staging.conflict-mode', 'replace') \
-    .option("fs.s3a.fast.upload.buffer", "bytebuffer")\
-    .mode('overwrite') \
-    .csv(path='s3a://sample-bucket/sales_processed', sep=',')
-df_postgres \
-    .write \
-    .option('fs.s3a.committer.name', 'partitioned') \
-    .option('fs.s3a.committer.staging.conflict-mode', 'replace') \
-    .option("fs.s3a.fast.upload.buffer", "bytebuffer")\
-    .mode('overwrite') \
-    .csv(path='s3a://sample-bucket/stores_processed', sep=',')
+df_postgres.write \
+    .format("jdbc") \
+    .option("url", "jdbc:postgresql://postgres-db:5432/retail_db") \
+    .option("dbtable", "public.stores_info") \
+    .option("user", "postgres") \
+    .option("password", "casa1234") \
+    .option("driver", "org.postgresql.Driver") \
+    .save()
+
+df_combined.write \
+    .format("jdbc") \
+    .option("url", "jdbc:postgresql://postgres-db:5432/retail_db") \
+    .option("dbtable", "public.sales_info") \
+    .option("user", "postgres") \
+    .option("password", "casa1234") \
+    .option("driver", "org.postgresql.Driver") \
+    .save()
 
 spark.stop()
